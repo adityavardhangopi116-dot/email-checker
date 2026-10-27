@@ -3,8 +3,8 @@
 A small Flask web app. Paste a list of email addresses and each one is reported as
 **Likely delivered**, **Likely to bounce**, or **Unknown**, with a plain-language reason.
 
-- **Live app:** `<ADD RENDER URL>`
-- **Source:** `<ADD GITHUB URL>`
+- **Live app:** https://email-checker-kepm.onrender.com/
+- **Source:** https://github.com/adityavardhangopi116-dot/email-checker
 
 ## How it works
 
@@ -50,7 +50,7 @@ In DNS-only mode the tool can still confidently flag malformed addresses, typos,
 as likely to bounce. To get full checks, run it locally from a home or office network that allows
 port 25, or on a VPS that permits outbound SMTP. Set `SMTP_PROBE=off` to force DNS-only mode.
 
-> Update this section after deploying with the mode your live link actually shows.
+**Deployed result:** the live version on Render's free tier runs in **DNS-only** mode because outbound port 25 is blocked. It checks syntax and domain records; mailbox-level results show as Unknown. Run locally on a network that allows port 25 for full SMTP checks.
 
 ## Run locally
 
