@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email address checker</title>
+<style>
+:root{--bg:#f7f6f2;--surface:#fff;--ink:#1d2326;--muted:#5d676b;--line:#d9dcd6;
+--ok:#1d6b45;--ok-bg:#e1f1e8;--bad:#9b2c2c;--bad-bg:#f8e3e1;--unk:#7a5a00;--unk-bg:#f6ecd0;--accent:#1d4f6b}
+@media (prefers-color-scheme:dark){:root{--bg:#14181a;--surface:#1c2124;--ink:#e8eae6;--muted:#9aa4a8;--line:#323a3e;
+--ok:#7fd4a2;--ok-bg:#1b3327;--bad:#f0a29c;--bad-bg:#3a2220;--unk:#e9c766;--unk-bg:#3a3118;--accent:#8cc3e0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Georgia,"Iowan Old Style",serif;
+padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+main{max-width:860px;margin:0 auto;padding:2rem 1.25rem 4rem}
+h1{font-size:2rem;line-height:1.15;margin:0 0 .5rem;letter-spacing:-.01em}
+p.lede{color:var(--muted);margin:0 0 1.5rem;max-width:62ch}
+textarea{width:100%;min-height:10rem;padding:.85rem;font:15px/1.5 ui-monospace,Menlo,Consolas,monospace;
+background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;resize:vertical}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:.75rem;align-items:center;margin:.75rem 0 1.5rem;flex-wrap:wrap}
+button{font:600 15px system-ui,sans-serif;padding:.65rem 1.2rem;border-radius:6px;border:1px solid var(--accent);
+background:var(--accent);color:var(--bg);cursor:pointer}
+button.ghost{background:transparent;color:var(--accent)}
+button:disabled{opacity:.55;cursor:wait}
+.note{padding:.75rem 1rem;border-left:4px solid var(--unk);background:var(--unk-bg);color:var(--ink);
+border-radius:0 6px 6px 0;margin-bottom:1.25rem;font-size:15px}
+.note.full{border-color:var(--ok);background:var(--ok-bg)}
+.summary{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;font:14px system-ui,sans-serif}
+.chip{padding:.25rem .7rem;border-radius:99px;font-weight:600}
+.deliverable{background:var(--ok-bg);color:var(--ok)}.bounce{background:var(--bad-bg);color:var(--bad)}.unknown{background:var(--unk-bg);color:var(--unk)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:560px}
+th,td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 13px system-ui,sans-serif;color:var(--muted)}
+tr:last-child td{border-bottom:0}
+td.email{font:14px ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+td.why{color:var(--muted);font-size:15px}
+.err{color:var(--bad);font:15px system-ui,sans-serif}
+</style>
+</head>
+<body>
+<main>
+<h1>Will this email arrive?</h1>
+<p class="lede">Paste up to {{ max_addresses }} addresses, separated by spaces, commas or new lines. Each one is marked likely to be delivered, likely to bounce, or unknown. Nothing is ever sent to the addresses.</p>
+<div id="mode" class="note" hidden></div>
+<textarea id="input" aria-label="Email addresses" placeholder="ada@example.com&#10;grace@example.org"></textarea>
+<div class="row">
+  <button id="go">Check addresses</button>
+  <button id="csv" class="ghost" hidden>Download CSV</button>
+  <span id="msg" class="err" role="alert"></span>
+</div>
+<div id="out" aria-live="polite"></div>
+</main>
+<script>
+const LABEL={deliverable:"Likely delivered",bounce:"Likely to bounce",unknown:"Unknown"};
+const $=id=>document.getElementById(id);
+let last=[];
+fetch("/api/status").then(r=>r.json()).then(s=>showMode(s.smtp_enabled)).catch(()=>{});
+function showMode(on){
+  const n=$("mode");n.hidden=false;n.className="note"+(on?" full":"");
+  n.textContent=on?"Full checks are on: syntax, domain mail records, and a mailbox query to the recipient's mail server."
+    :"This server can check syntax and domain mail records only. It cannot ask mail servers about individual mailboxes, so valid-looking addresses on real domains are marked Unknown.";
+}
+$("go").onclick=async()=>{
+  $("msg").textContent="";$("out").textContent="";$("csv").hidden=true;
+  const btn=$("go");btn.disabled=true;btn.textContent="Checking…";
+  try{
+    const r=await fetch("/api/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({emails:$("input").value})});
+    const d=await r.json();
+    if(!r.ok){$("msg").textContent=d.error||"Something went wrong. Try again.";return}
+    showMode(d.smtp_enabled);render(d);
+  }catch(e){$("msg").textContent="Could not reach the server. Check your connection and try again."}
+  finally{btn.disabled=false;btn.textContent="Check addresses"}
+};
+function render(d){
+  last=d.results;const c={deliverable:0,bounce:0,unknown:0};d.results.forEach(x=>c[x.status]++);
+  const out=$("out");out.textContent="";
+  if(d.truncated){const t=document.createElement("div");t.className="note";t.textContent=`Only the first ${d.results.length} of ${d.total} addresses were checked.`;out.append(t)}
+  const s=document.createElement("div");s.className="summary";
+  for(const k of Object.keys(c)){const e=document.createElement("span");e.className="chip "+k;e.textContent=`${c[k]} ${LABEL[k].toLowerCase()}`;s.append(e)}
+  out.append(s);
+  const w=document.createElement("div");w.className="tablewrap";
+  const t=document.createElement("table");t.innerHTML="<thead><tr><th>Address</th><th>Result</th><th>Why</th></tr></thead>";
+  const b=document.createElement("tbody");
+  for(const x of d.results){
+    const tr=document.createElement("tr");
+    const a=document.createElement("td");a.className="email";a.textContent=x.email;
+    const st=document.createElement("td");const chip=document.createElement("span");chip.className="chip "+x.status;chip.textContent=LABEL[x.status];st.append(chip);
+    const y=document.createElement("td");y.className="why";y.textContent=x.reason;
+    tr.append(a,st,y);b.append(tr);
+  }
+  t.append(b);w.append(t);out.append(w);$("csv").hidden=false;
+}
+$("csv").onclick=()=>{
+  const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
+  const rows=[["email","result","reason"],...last.map(x=>[x.email,LABEL[x.status],x.reason])].map(r=>r.map(q).join(",")).join("\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([rows],{type:"text/csv"}));a.download="email-check.csv";a.click();
+};
+</script>
+</body>
+</html>
